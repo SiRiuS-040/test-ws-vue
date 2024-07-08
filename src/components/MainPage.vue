@@ -6,24 +6,20 @@
         <span v-if="isConnected">WS Connected</span>
         <span v-if="isConnected && isAuthorized">Name: {{ USER_NAME }}</span>
       </div>
-      <button v-if="isConnected" class="ui-button" @click="connection.close()">
-        Закрыть соединение
-      </button>
-      <button v-if="!isConnected" class="ui-button" @click="openConnection()">
-        Повторное соединение
-      </button>
-      <button class="ui-button" @click="isCmdLogPanelHidden = !isCmdLogPanelHidden">
+      <button v-if="isConnected" @click="connection.close()">Закрыть соединение</button>
+      <button v-if="!isConnected" @click="openConnection()">Повторное соединение</button>
+      <button @click="isCmdLogPanelHidden = !isCmdLogPanelHidden">
         Скрыть / показать панель логов команд
       </button>
 
-      <button class="ui-button" @click="clearCmdLogs()">Очитить логи команд</button>
-      <button class="ui-button" @click="clearJournalLogs()">Очитить логи Журнала</button>
+      <button @click="clearCmdLogs()">Очитить логи команд</button>
+      <button @click="clearJournalLogs()">Очитить логи Журнала</button>
       <h2>Блок панели управления</h2>
 
-      <div v-if="!isAuthorized && isConnected" class="admin-panel__login-form login-form">
+      <div v-if="!isAuthorized && isConnected" class="admin-panel__login-form">
         <input v-model="username" type="text" />
         <input v-model="password" type="text" />
-        <button class="ui-button" @click="appLogin()">Log in</button>
+        <button @click="appLogin()">Log in</button>
         <p>Вход по своему токену</p>
 
         <label class="ui-input">
@@ -35,11 +31,11 @@
             class="ui-input__input"
           />
         </label>
-        <button class="ui-button" @click="appLoginByToken()">Log by token</button>
+        <button @click="appLoginByToken()">Log by token</button>
       </div>
       <div v-if="isAuthorized" class="admin-panel__controls">
-        <button class="ui-button" @click="appLogout()">Log out</button>
-        <button class="ui-button" @click="appSubscribeList()">Получить данные Журнала</button>
+        <button @click="appLogout()">Log out</button>
+        <button @click="appSubscribeList()">Получить данные Журнала</button>
 
         <hr />
         <label class="ui-input">
@@ -52,11 +48,8 @@
           />
         </label>
 
-        <button class="ui-button" @click="appSubscribe(subscribtionInput)">
-          Оформить подписку
-        </button>
-
-        <button class="ui-button" @click="appUnubscribe(subscribtionInput)">Отписаться</button>
+        <button @click="appSubscribe(subscribtionInput)">Оформить подписку</button>
+        <button @click="appUnubscribe(subscribtionInput)">Отписаться</button>
         <hr />
       </div>
       <div v-if="isAuthorized && journalFilterLabels.length" class="admin-panel__controls">
@@ -76,7 +69,7 @@
         <hr />
 
         <label class="ui-input">
-          <span class="ui-input__label">Подписка</span>
+          <span class="ui-input__label">Поиск в журнале</span>
           <input
             v-model="logSearchInput"
             type="text"
@@ -86,10 +79,10 @@
         </label>
       </div>
     </div>
-    <div class="log-panel">
+    <div class="admin-panel__log-panel">
       <div :class="cmdLogPanelClass" class="admin-panel__logs-wrapper admin-panel__cmd-logs">
         <h2>Блок логов команд</h2>
-        <div v-if="CMD_LOG" class="logs-block" ref="cmdLogsList">
+        <div v-if="CMD_LOG" class="admin-panel__logs-block" ref="cmdLogsList">
           <p
             v-for="(log, index) in CMD_LOG"
             :key="index"
@@ -102,7 +95,7 @@
       </div>
       <div class="admin-panel__logs-wrapper admin-panel__journal-logs">
         <h2>Журнал работы</h2>
-        <div v-if="true" class="logs-block" ref="journalLogsList">
+        <div v-if="true" class="admin-panel__logs-block" ref="journalLogsList">
           <p
             v-for="(log, index) in filteledJournalLogs"
             :key="index"
@@ -139,8 +132,8 @@ const filteledJournalLogs = computed(() => {
     return selectedJournalFilters.value.includes(Level)
   })
 })
-const username = ref('enter')
-const password = ref('A505a')
+const username = ref('')
+const password = ref('')
 const tokenInput = ref('')
 const subscribtionInput = ref('')
 const logSearchInput = ref('')
@@ -329,7 +322,7 @@ const searchClass = (log: any) => {
   for (let key in log) {
     if (
       log[key].toLowerCase().includes(logSearchInput.value.toLowerCase()) &&
-      logSearchInput.value.length > 1
+      logSearchInput.value.length > 0
     ) {
       return 'search-result'
     }
@@ -434,6 +427,26 @@ watch(CMD_LOG.value, () => {
       color: green;
     }
   }
+
+  &__login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  &__log-panel {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 24px;
+    max-height: inherit;
+  }
+
+  &__logs-block {
+    border: 1px solid gray;
+    padding: 8px;
+    flex-grow: 1;
+    overflow: auto;
+  }
 }
 
 .status-marker {
@@ -446,26 +459,6 @@ watch(CMD_LOG.value, () => {
   &.connected {
     background-color: greenyellow;
   }
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.log-panel {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 24px;
-  max-height: inherit;
-}
-
-.logs-block {
-  border: 1px solid gray;
-  padding: 8px;
-  flex-grow: 1;
-  overflow: auto;
 }
 
 .ui-input {
