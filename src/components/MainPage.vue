@@ -26,7 +26,7 @@
       <div v-if="!isAuthorized && isConnected" class="admin-panel__login-form login-form">
         <input v-model="username" type="text" />
         <input v-model="password" type="text" />
-        <button class="ui-button" @click="api.login(connection, loginData)">Log in</button>
+        <button class="ui-button" @click="appLogin()">Log in</button>
         <p>Вход по своему токену</p>
 
         <label class="ui-input">
@@ -39,14 +39,12 @@
           />
         </label>
 
-        <button class="ui-button" @click="api.loginByToken(connection)">Log by token</button>
+        <button class="ui-button" @click="appLoginByToken()">Log by token</button>
       </div>
 
       <div v-if="isAuthorized" class="admin-panel__controls">
-        <button class="ui-button" @click="api.logout(connection)">Log out</button>
-        <button class="ui-button" @click="api.subscribeList(connection)">
-          Получить данные Журнала
-        </button>
+        <button class="ui-button" @click="appLogout()">Log out</button>
+        <button class="ui-button" @click="appSubscribeList()">Получить данные Журнала</button>
 
         <hr />
         <label class="ui-input">
@@ -59,13 +57,11 @@
           />
         </label>
 
-        <button class="ui-button" @click="api.subscribe(connection, subscribtionInput)">
+        <button class="ui-button" @click="appSubscribe(subscribtionInput)">
           Оформить подписку
         </button>
 
-        <button class="ui-button" @click="api.unsubscribe(connection, subscribtionInput)">
-          Отписаться
-        </button>
+        <button class="ui-button" @click="appUnubscribe(subscribtionInput)">Отписаться</button>
         <hr />
       </div>
 
@@ -114,232 +110,144 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { AppApi } from '@/app/api/appApi'
+import {
+  LoginData,
+  LoginCall,
+  LogItem,
+  SubscribeCall,
+  MSG_TYPE,
+  CALL_TYPE,
+  CALL_PATH,
+  CALL_MSG_LABEL,
+  RESPONSE_MSG_TYPE
+} from '@/app/types/type'
 
-export interface LoginData {
-  username: string
-  password: string
-}
-
-export interface LoginCall {
-  Token: string
-  Username: string
-}
-
-export interface LogItem {
-  Timestamp: string
-  Level: string
-  Message: string
-  Source: string
-}
-
-export interface SubscribeCall {
-  Action: number
-  Items: LogItem[]
-}
-
-enum MSG_TYPE {
-  WELCOME = 0,
-  CALL = 2,
-  CALL_RESULT = 3,
-  CALL_ERROR = 4,
-  SUBSCRIBE = 5,
-  UNSUBSCRIBE = 6,
-  EVENT = 8,
-  HEART_BEAT = 20
-}
-
-enum CALL_TYPE {
-  LOGIN = MSG_TYPE.CALL,
-  LOGIN_BY_TOKEN = MSG_TYPE.CALL,
-  LOGOUT = MSG_TYPE.CALL,
-  SUBSCRIBE_LIST = MSG_TYPE.SUBSCRIBE,
-  SUBSCRIBE = MSG_TYPE.SUBSCRIBE,
-  UNSUBSCRIBE = MSG_TYPE.UNSUBSCRIBE,
-  HEART_BEAT = MSG_TYPE.HEART_BEAT
-}
-
-enum CALL_PATH {
-  LOGIN = 'http://enter.local/login',
-  LOGIN_BY_TOKEN = 'http://enter.local/loginByToken',
-  LOGOUT = 'http://enter.local/logout',
-  SUBSCRIBE_LIST = 'http://enter.local/subscription/logs/list',
-  SUBSCRIBE = `http://enter.local/`,
-  UNSUBSCRIBE = `http://enter.local/`
-}
-
-enum CALL_MSG_LABEL {
-  LOGIN = 'LOGIN CALL',
-  LOGIN_BY_TOKEN = 'LOGIN_BY_TOKEN CALL',
-  LOGOUT = 'LOGOUT CALL',
-  SUBSCRIBE_LIST = 'SUBSCRIBE_LIST CALL',
-  SUBSCRIBE = 'SUBSCRIBE CALL',
-  UNSUBSCRIBE = 'UNSUBSCRIBE CALL',
-  HEART_BEAT = 'HEART_BEAT CALL'
-}
-
-enum RESPONSE_MSG_TYPE {
-  OPEN_CONNECTION = 'OPEN_CONNECTION',
-  DISCONNECTED_BY_USER = 'DISCONNECTED_BY_USER',
-  NETWORK_ERROR = 'NETWORK_ERROR',
-  RESPONSE_ERROR = 'RESPONSE_ERROR',
-  RESPONSE = 'RESPONSE',
-  EVENT = 'EVENT RESPONSE',
-  CALL_ERROR = 'CALL_ERROR',
-  HEART_BEAT = 'HEART_BEAT RESPONSE'
-}
-
-class AppApi {
-  login(connection: WebSocket, loginData: LoginData) {
-    const args = [CALL_TYPE.LOGIN, generateId(16), CALL_PATH.LOGIN, loginData]
-
-    addResponseMessage(CALL_MSG_LABEL.LOGIN, args)
-    connection.send(JSON.stringify(args))
-  }
-
-  loginByToken(connection: WebSocket) {
-    let token: string | null = tokenInput.value
-
-    if (!tokenInput.value && localStorage.getItem('Token')) {
-      token = localStorage.getItem('Token')
-    }
-
-    const args = [CALL_TYPE.LOGIN_BY_TOKEN, generateId(16), CALL_PATH.LOGIN_BY_TOKEN, token]
-
-    addResponseMessage(CALL_MSG_LABEL.LOGIN_BY_TOKEN, args)
-    connection.send(JSON.stringify(args))
-  }
-
-  logout(connection: WebSocket) {
-    const args = [CALL_TYPE.LOGOUT, generateId(16), CALL_PATH.LOGOUT]
-
-    addResponseMessage(CALL_MSG_LABEL.LOGOUT, args)
-    connection.send(JSON.stringify(args))
-  }
-
-  subscribeList(connection: WebSocket) {
-    const args = [CALL_TYPE.SUBSCRIBE_LIST, CALL_PATH.SUBSCRIBE_LIST]
-
-    addResponseMessage(CALL_MSG_LABEL.SUBSCRIBE_LIST, args)
-    connection.send(JSON.stringify(args))
-  }
-
-  subscribe(connection: WebSocket, subscription: string) {
-    const args = [CALL_TYPE.SUBSCRIBE, `${CALL_PATH.SUBSCRIBE}${subscription}`]
-
-    addResponseMessage(CALL_MSG_LABEL.SUBSCRIBE, args)
-    connection.send(JSON.stringify(args))
-  }
-
-  unsubscribe(connection: WebSocket, subscription: string) {
-    const args = [CALL_TYPE.UNSUBSCRIBE, `${CALL_PATH.SUBSCRIBE}${subscription}`]
-
-    addResponseMessage(CALL_MSG_LABEL.UNSUBSCRIBE, args)
-    connection.send(JSON.stringify(args))
-  }
-
-  sendHeartBeat(connection: WebSocket, counter: number) {
-    const args = [CALL_TYPE.HEART_BEAT, counter]
-
-    addResponseMessage(CALL_MSG_LABEL.HEART_BEAT, args)
-    connection.send(JSON.stringify(args))
-  }
-}
-
-const api = new AppApi()
-let counter = 0
+import { generateId, getLogMsg } from '@/app/helpers/utils'
 
 const WS_URL = 'ws://test.enter-systems.ru/'
 let connection = new WebSocket(WS_URL, ['wamp'])
 
+let heartBeatCounter = 0
+const HERTBEAT_INTERVAL = 30000
+
+const api = new AppApi()
 const LOG_MSGS = ref([] as string[])
 const SUBSCRIBE_LOGS = ref([] as string[])
-
 const username = ref('enter')
 const password = ref('A505a')
 const tokenInput = ref('')
 const subscribtionInput = ref('')
-
 const cmdLogsList = ref(null)
 const journalLogsList = ref(null)
-
 const loginData = reactive({
   username,
   password
-})
+} as LoginData)
 
 const isConnected = ref(false)
 const isAuthorized = ref(false)
 const isCmdLogPanelHidden = ref(false)
-
 const USER_NAME = ref('')
 const USER_TOKEN = ref('')
-
 const journalFilters = ref([])
-
 const statusClass = computed(() => {
   return isConnected.value ? 'connected' : ''
 })
-
 const cmdLogPanelClass = computed(() => {
   return isCmdLogPanelHidden.value ? 'hidden' : ''
 })
 
-function dec2hex(dec: number) {
-  return dec.toString(16).padStart(2, '0')
+const appLogin = () => {
+  const args = [CALL_TYPE.LOGIN, generateId(16), CALL_PATH.LOGIN, loginData]
+  addCmdLogMessage(CALL_MSG_LABEL.LOGIN, args)
+  api.login(connection, args)
 }
 
-function generateId(len: number) {
-  var arr = new Uint8Array((len || 40) / 2)
-  window.crypto.getRandomValues(arr)
-  return Array.from(arr, dec2hex).join('')
+const appLoginByToken = () => {
+  let token: string | null = tokenInput.value
+  if (!tokenInput.value && localStorage.getItem('Token')) {
+    token = localStorage.getItem('Token')
+  }
+  const args = [CALL_TYPE.LOGIN_BY_TOKEN, generateId(16), CALL_PATH.LOGIN_BY_TOKEN, token]
+  addCmdLogMessage(CALL_MSG_LABEL.LOGIN_BY_TOKEN, args)
+  api.loginByToken(connection, args)
 }
 
-function getLogMsg(type: string, changedData: string) {
-  const date = new Date()
-  return `${date.toLocaleString()} ${type} ${changedData}`
+const appLogout = () => {
+  const args = [CALL_TYPE.LOGOUT, generateId(16), CALL_PATH.LOGOUT]
+  addCmdLogMessage(CALL_MSG_LABEL.LOGOUT, args)
+  api.logout(connection, args)
 }
 
-function addResponseMessage(type: string, msg: any) {
+const appSubscribeList = () => {
+  const args = [CALL_TYPE.SUBSCRIBE_LIST, CALL_PATH.SUBSCRIBE_LIST]
+  addCmdLogMessage(CALL_MSG_LABEL.SUBSCRIBE_LIST, args)
+  api.subscribeList(connection, args)
+}
+
+const appSubscribe = (subscription) => {
+  const args = [CALL_TYPE.SUBSCRIBE, `${CALL_PATH.SUBSCRIBE}${subscription}`]
+  addCmdLogMessage(CALL_MSG_LABEL.SUBSCRIBE, args)
+  api.subscribe(connection, args)
+}
+
+const appUnubscribe = (subscription) => {
+  const args = [CALL_TYPE.UNSUBSCRIBE, `${CALL_PATH.SUBSCRIBE}${subscription}`]
+  addCmdLogMessage(CALL_MSG_LABEL.UNSUBSCRIBE, args)
+  api.unsubscribe(connection, args)
+}
+
+const sendHeartBeat = () => {
+  const args = [CALL_TYPE.HEART_BEAT, heartBeatCounter]
+  addCmdLogMessage(CALL_MSG_LABEL.HEART_BEAT, args)
+  api.sendHeartBeat(connection, args)
+}
+
+const addCmdLogMessage = (type: string, msg: any) => {
   LOG_MSGS.value.push({ type, msg })
 }
 
-function getJournalFilters(arr: any[]) {
+const getJournalFilters = (arr: any[]) => {
   const levelsArr = arr.map(function (item) {
     return item.Level
   })
   journalFilters.value = Array.from(new Set(levelsArr))
 }
 
+const openConnection = () => {
+  connection = new WebSocket(WS_URL, ['wamp'])
+  isConnected.value = true
+  setConnectionWatchers()
+}
+
 function setConnectionWatchers() {
   connection.onopen = function () {
-    addResponseMessage(
-      RESPONSE_MSG_TYPE.OPEN_CONNECTION,
-      'Установка соединения c ws://test.enter-systems.ru/'
-    )
+    addCmdLogMessage(RESPONSE_MSG_TYPE.OPEN_CONNECTION, `Установка соединения c ${WS_URL}`)
     isConnected.value = true
   }
 
   let heartBeatInterval = setInterval(() => {
-    api.sendHeartBeat(connection, ++counter)
-  }, 30000)
+    sendHeartBeat()
+  }, HERTBEAT_INTERVAL)
 
   connection.onclose = function (event) {
     if (event.wasClean) {
-      addResponseMessage(RESPONSE_MSG_TYPE.DISCONNECTED_BY_USER, '')
+      addCmdLogMessage(RESPONSE_MSG_TYPE.DISCONNECTED_BY_USER, '')
     } else {
-      addResponseMessage(RESPONSE_MSG_TYPE.NETWORK_ERROR, '')
+      addCmdLogMessage(RESPONSE_MSG_TYPE.NETWORK_ERROR, '')
     }
 
     clearInterval(heartBeatInterval)
     isConnected.value = false
     isAuthorized.value = false
-    counter = 0
+    heartBeatCounter = 0
   }
 
   connection.onerror = function (error: any) {
     alert('Ошибка ' + error.message)
-    addResponseMessage(RESPONSE_MSG_TYPE.RESPONSE_ERROR, 'Ошибка ' + error.message)
+    addCmdLogMessage(RESPONSE_MSG_TYPE.RESPONSE_ERROR, 'Ошибка ' + error.message)
   }
 
   setMessageWatcher()
@@ -351,12 +259,12 @@ function setMessageWatcher() {
 
     // 0 - Welcome
     if (msg[0] === MSG_TYPE.WELCOME) {
-      addResponseMessage(RESPONSE_MSG_TYPE.OPEN_CONNECTION, msg)
+      addCmdLogMessage(RESPONSE_MSG_TYPE.RESPONSE, msg)
     }
 
     // 3 - CallResult
     if (msg[0] === MSG_TYPE.CALL_RESULT) {
-      addResponseMessage(RESPONSE_MSG_TYPE.RESPONSE, msg)
+      addCmdLogMessage(RESPONSE_MSG_TYPE.RESPONSE, msg)
 
       // Проверка на данные логина
       if (msg[2] && msg[2].Token && msg[2].Username) {
@@ -375,7 +283,7 @@ function setMessageWatcher() {
 
     // 4 - CallError
     if (msg[0] === MSG_TYPE.CALL_ERROR) {
-      addResponseMessage(RESPONSE_MSG_TYPE.CALL_ERROR, msg)
+      addCmdLogMessage(RESPONSE_MSG_TYPE.CALL_ERROR, msg)
     }
 
     // 8 - Event
@@ -385,25 +293,17 @@ function setMessageWatcher() {
         SUBSCRIBE_LOGS.value.push(...msg[2].Items)
       }
 
-      addResponseMessage(RESPONSE_MSG_TYPE.EVENT, msg)
-
+      addCmdLogMessage(RESPONSE_MSG_TYPE.EVENT, msg)
       getJournalFilters(SUBSCRIBE_LOGS.value)
     }
 
     // 20 - Heartbeat
     // обновление счетчика с ответа
     if (msg[0] === MSG_TYPE.HEART_BEAT) {
-      counter = msg[1]
-      addResponseMessage(RESPONSE_MSG_TYPE.HEART_BEAT, msg)
+      heartBeatCounter = msg[1]
+      addCmdLogMessage(RESPONSE_MSG_TYPE.HEART_BEAT, msg)
     }
   }
-}
-
-function openConnection() {
-  connection = new WebSocket(WS_URL, ['wamp'])
-  isConnected.value = true
-
-  setConnectionWatchers()
 }
 
 function clearCmdLogs() {
@@ -415,11 +315,12 @@ function clearJournalLogs() {
   journalFilters.value = []
 }
 
-setConnectionWatchers()
+onMounted(() => {
+  setConnectionWatchers()
+})
 
 watch(LOG_MSGS.value, () => {
   const messages = cmdLogsList.value
-
   messages.scrollTop = messages.scrollHeight
 })
 </script>
