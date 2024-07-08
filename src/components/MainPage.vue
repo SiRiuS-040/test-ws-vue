@@ -11,17 +11,20 @@
       <button @click="isCmdLogPanelHidden = !isCmdLogPanelHidden">
         Скрыть / показать панель логов команд
       </button>
-
       <button @click="clearCmdLogs()">Очитить логи команд</button>
       <button @click="clearJournalLogs()">Очитить логи Журнала</button>
       <h2>Блок панели управления</h2>
-
       <div v-if="!isAuthorized && isConnected" class="admin-panel__login-form">
-        <input v-model="username" type="text" />
-        <input v-model="password" type="text" />
+        <label class="ui-input">
+          <span class="ui-input__label">Логин</span>
+          <input v-model="username" type="text" placeholder="логин" class="ui-input__input" />
+        </label>
+        <label class="ui-input">
+          <span class="ui-input__label">Пароль</span>
+          <input v-model="password" type="text" placeholder="пароль" class="ui-input__input" />
+        </label>
         <button @click="appLogin()">Log in</button>
         <p>Вход по своему токену</p>
-
         <label class="ui-input">
           <span class="ui-input__label">Свой токен</span>
           <input
@@ -36,7 +39,6 @@
       <div v-if="isAuthorized" class="admin-panel__controls">
         <button @click="appLogout()">Log out</button>
         <button @click="appSubscribeList()">Получить данные Журнала</button>
-
         <hr />
         <label class="ui-input">
           <span class="ui-input__label">Подписка</span>
@@ -47,7 +49,6 @@
             class="ui-input__input"
           />
         </label>
-
         <button @click="appSubscribe(subscribtionInput)">Оформить подписку</button>
         <button @click="appUnubscribe(subscribtionInput)">Отписаться</button>
         <hr />
@@ -67,7 +68,6 @@
           </label>
         </div>
         <hr />
-
         <label class="ui-input">
           <span class="ui-input__label">Поиск в журнале</span>
           <input
@@ -89,7 +89,7 @@
             :class="{ error: log.msg[0] === MSG_TYPE.CALL_ERROR }"
             class="admin-panel__log-item"
           >
-            {{ `${log.date} ${log.type} ${log.msg}` }}
+            {{ `${log.date} ${log.type} ${JSON.stringify(log.msg)}` }}
           </p>
         </div>
       </div>
@@ -205,7 +205,7 @@ const sendHeartBeat = () => {
   api.sendHeartBeat(connection, args)
 }
 
-const addCmdLogMessage = (type: string, msg: any) => {
+function addCmdLogMessage(type: string, msg: any) {
   const date = new Date().toLocaleString()
   CMD_LOG.value.push({ date, type, msg })
 }
@@ -215,7 +215,6 @@ const getJournalFilters = (arr: any[]) => {
     return item.Level
   })
   journalFilterLabels.value = Array.from(new Set(levelsArr))
-
   selectedJournalFilters.value = journalFilterLabels.value.slice()
 }
 
@@ -341,7 +340,7 @@ onMounted(() => {
 })
 
 watch(CMD_LOG.value, () => {
-  const messages = cmdLogsList.value
+  const messages: any = cmdLogsList.value
   messages.scrollTop = messages.scrollHeight
 })
 </script>
