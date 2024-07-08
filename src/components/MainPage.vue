@@ -4,17 +4,14 @@
       <div class="admin-panel__status">
         <span :class="statusClass" class="status-marker"></span>
         <span v-if="isConnected">WS Connected</span>
-
         <span v-if="isConnected && isAuthorized">Name: {{ USER_NAME }}</span>
       </div>
-
       <button v-if="isConnected" class="ui-button" @click="connection.close()">
         Закрыть соединение
       </button>
       <button v-if="!isConnected" class="ui-button" @click="openConnection()">
         Повторное соединение
       </button>
-
       <button class="ui-button" @click="isCmdLogPanelHidden = !isCmdLogPanelHidden">
         Скрыть / показать панель логов команд
       </button>
@@ -38,10 +35,8 @@
             class="ui-input__input"
           />
         </label>
-
         <button class="ui-button" @click="appLoginByToken()">Log by token</button>
       </div>
-
       <div v-if="isAuthorized" class="admin-panel__controls">
         <button class="ui-button" @click="appLogout()">Log out</button>
         <button class="ui-button" @click="appSubscribeList()">Получить данные Журнала</button>
@@ -65,11 +60,17 @@
         <hr />
       </div>
 
-      <div v-if="isAuthorized && journalFilters.length" class="admin-panel__controls">
-        <h2>Фильтр</h2>
-        <div class="admin-panel__filters">
-          <label v-for="(item, index) in journalFilters" class="ui-checkbox" :key="index">
-            <input :value="item" type="checkbox" class="ui-checkbox__input" />
+      <div class="admin-panel__controls">
+        <h2 v-if="isAuthorized && journalFilterLabels.length">Фильтр</h2>
+        <div v-if="isAuthorized && journalFilterLabels.length" class="admin-panel__filters">
+          <label v-for="(item, index) in journalFilterLabels" class="ui-checkbox" :key="index">
+            <input
+              v-model="selectedJournalFilters"
+              :value="item"
+              :checked="true"
+              type="checkbox"
+              class="ui-checkbox__input"
+            />
             <span class="ui-checkbox__label">{{ item }}</span>
           </label>
         </div>
@@ -78,9 +79,9 @@
     <div class="log-panel">
       <div :class="cmdLogPanelClass" class="admin-panel__logs-wrapper admin-panel__cmd-logs">
         <h2>Блок логов команд</h2>
-        <div v-if="LOG_MSGS" class="logs-block" ref="cmdLogsList">
+        <div v-if="CMD_LOG" class="logs-block" ref="cmdLogsList">
           <p
-            v-for="(log, index) in LOG_MSGS"
+            v-for="(log, index) in CMD_LOG"
             :key="index"
             :class="{ error: log.msg[0] === MSG_TYPE.CALL_ERROR }"
             class="admin-panel__log-item"
@@ -91,9 +92,9 @@
       </div>
       <div class="admin-panel__logs-wrapper admin-panel__journal-logs">
         <h2>Журнал работы</h2>
-        <div class="logs-block" ref="journalLogsList">
+        <div v-if="true" class="logs-block" ref="journalLogsList">
           <p
-            v-for="(log, index) in SUBSCRIBE_LOGS"
+            v-for="(log, index) in filteledJournalLogs"
             :key="index"
             :class="{
               error: log?.Level === 'ERROR',
@@ -133,8 +134,21 @@ let heartBeatCounter = 0
 const HERTBEAT_INTERVAL = 30000
 
 const api = new AppApi()
-const LOG_MSGS = ref([] as string[])
-const SUBSCRIBE_LOGS = ref([] as string[])
+
+const CMD_LOG = ref([] as string[])
+const JOURNAL_LOGS = ref([] as string[])
+
+const journalFilterLabels = ref([])
+const selectedJournalFilters = ref([])
+
+const filteledJournalLogs = computed(() => {
+  console.log(selectedJournalFilters.value)
+
+  return JOURNAL_LOGS.value.filter(({ Level }) => {
+    return selectedJournalFilters.value.includes(Level)
+  })
+})
+
 const username = ref('enter')
 const password = ref('A505a')
 const tokenInput = ref('')
@@ -151,7 +165,7 @@ const isAuthorized = ref(false)
 const isCmdLogPanelHidden = ref(false)
 const USER_NAME = ref('')
 const USER_TOKEN = ref('')
-const journalFilters = ref([])
+
 const statusClass = computed(() => {
   return isConnected.value ? 'connected' : ''
 })
@@ -200,20 +214,22 @@ const appUnubscribe = (subscription) => {
 }
 
 const sendHeartBeat = () => {
-  const args = [CALL_TYPE.HEART_BEAT, heartBeatCounter]
+  const args = [CALL_TYPE.HEART_BEAT, ++heartBeatCounter]
   addCmdLogMessage(CALL_MSG_LABEL.HEART_BEAT, args)
   api.sendHeartBeat(connection, args)
 }
 
 const addCmdLogMessage = (type: string, msg: any) => {
-  LOG_MSGS.value.push({ type, msg })
+  CMD_LOG.value.push({ type, msg })
 }
 
 const getJournalFilters = (arr: any[]) => {
   const levelsArr = arr.map(function (item) {
     return item.Level
   })
-  journalFilters.value = Array.from(new Set(levelsArr))
+  journalFilterLabels.value = Array.from(new Set(levelsArr))
+
+  selectedJournalFilters.value = journalFilterLabels.value.slice()
 }
 
 const openConnection = () => {
@@ -290,11 +306,11 @@ function setMessageWatcher() {
     // перенос логов в список журнала
     if (msg[0] === MSG_TYPE.EVENT) {
       if (msg[2] && msg[2].Items) {
-        SUBSCRIBE_LOGS.value.push(...msg[2].Items)
+        JOURNAL_LOGS.value.push(...msg[2].Items)
       }
 
       addCmdLogMessage(RESPONSE_MSG_TYPE.EVENT, msg)
-      getJournalFilters(SUBSCRIBE_LOGS.value)
+      getJournalFilters(JOURNAL_LOGS.value)
     }
 
     // 20 - Heartbeat
@@ -307,19 +323,24 @@ function setMessageWatcher() {
 }
 
 function clearCmdLogs() {
-  LOG_MSGS.value = []
+  CMD_LOG.value = []
 }
 
 function clearJournalLogs() {
-  SUBSCRIBE_LOGS.value = []
-  journalFilters.value = []
+  JOURNAL_LOGS.value = []
+  journalFilterLabels.value = []
 }
 
 onMounted(() => {
   setConnectionWatchers()
+
+  // selectedJournalFilters.value.forEach((item) => {
+  //   console.log(item)
+  //   item.checked = true
+  // })
 })
 
-watch(LOG_MSGS.value, () => {
+watch(CMD_LOG.value, () => {
   const messages = cmdLogsList.value
   messages.scrollTop = messages.scrollHeight
 })
