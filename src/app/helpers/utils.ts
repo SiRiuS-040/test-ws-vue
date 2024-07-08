@@ -7,8 +7,3 @@ export function generateId(len: number) {
   window.crypto.getRandomValues(arr)
   return Array.from(arr, dec2hex).join('')
 }
-
-export function getLogMsg(type: string, changedData: string) {
-  const date = new Date()
-  return `${date.toLocaleString()} ${type} ${changedData}`
-}

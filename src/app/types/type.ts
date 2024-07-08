@@ -20,6 +20,12 @@ export interface SubscribeCall {
   Items: LogItem[]
 }
 
+export interface CmdLogItem {
+  date: string
+  type: string
+  msg: any[]
+}
+
 export enum MSG_TYPE {
   WELCOME = 0,
   CALL = 2,

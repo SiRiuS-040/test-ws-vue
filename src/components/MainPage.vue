@@ -59,10 +59,9 @@
         <button class="ui-button" @click="appUnubscribe(subscribtionInput)">Отписаться</button>
         <hr />
       </div>
-
-      <div class="admin-panel__controls">
-        <h2 v-if="isAuthorized && journalFilterLabels.length">Фильтр</h2>
-        <div v-if="isAuthorized && journalFilterLabels.length" class="admin-panel__filters">
+      <div v-if="isAuthorized && journalFilterLabels.length" class="admin-panel__controls">
+        <h2>Фильтр</h2>
+        <div class="admin-panel__filters">
           <label v-for="(item, index) in journalFilterLabels" class="ui-checkbox" :key="index">
             <input
               v-model="selectedJournalFilters"
@@ -74,6 +73,17 @@
             <span class="ui-checkbox__label">{{ item }}</span>
           </label>
         </div>
+        <hr />
+
+        <label class="ui-input">
+          <span class="ui-input__label">Подписка</span>
+          <input
+            v-model="logSearchInput"
+            type="text"
+            placeholder="Поиск в журнале"
+            class="ui-input__input"
+          />
+        </label>
       </div>
     </div>
     <div class="log-panel">
@@ -86,7 +96,7 @@
             :class="{ error: log.msg[0] === MSG_TYPE.CALL_ERROR }"
             class="admin-panel__log-item"
           >
-            {{ getLogMsg(log.type, JSON.stringify(log.msg)) }}
+            {{ `${log.date} ${log.type} ${log.msg}` }}
           </p>
         </div>
       </div>
@@ -96,10 +106,7 @@
           <p
             v-for="(log, index) in filteledJournalLogs"
             :key="index"
-            :class="{
-              error: log?.Level === 'ERROR',
-              warning: log?.Level === 'WARN'
-            }"
+            :class="[getJurnalLogClasses(log), searchClass(log)]"
             class="admin-panel__log-item"
           >
             {{ `${log?.Timestamp} ${log?.Level} ${log?.Message} ${log?.Source}` }}
@@ -113,19 +120,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { AppApi } from '@/app/api/appApi'
-import {
-  LoginData,
-  LoginCall,
-  LogItem,
-  SubscribeCall,
-  MSG_TYPE,
-  CALL_TYPE,
-  CALL_PATH,
-  CALL_MSG_LABEL,
-  RESPONSE_MSG_TYPE
-} from '@/app/types/type'
-
-import { generateId, getLogMsg } from '@/app/helpers/utils'
+import { MSG_TYPE, CALL_TYPE, CALL_PATH, CALL_MSG_LABEL, RESPONSE_MSG_TYPE } from '@/app/types/type'
+import type { CmdLogItem, LogItem } from '@/app/types/type'
+import { generateId } from '@/app/helpers/utils'
 
 const WS_URL = 'ws://test.enter-systems.ru/'
 let connection = new WebSocket(WS_URL, ['wamp'])
@@ -133,32 +130,26 @@ let connection = new WebSocket(WS_URL, ['wamp'])
 let heartBeatCounter = 0
 const HERTBEAT_INTERVAL = 30000
 
-const api = new AppApi()
-
-const CMD_LOG = ref([] as string[])
-const JOURNAL_LOGS = ref([] as string[])
-
-const journalFilterLabels = ref([])
-const selectedJournalFilters = ref([])
-
+const CMD_LOG = ref([] as CmdLogItem[])
+const JOURNAL_LOGS = ref([] as LogItem[])
+const journalFilterLabels = ref([] as string[])
+const selectedJournalFilters = ref([] as string[])
 const filteledJournalLogs = computed(() => {
-  console.log(selectedJournalFilters.value)
-
   return JOURNAL_LOGS.value.filter(({ Level }) => {
     return selectedJournalFilters.value.includes(Level)
   })
 })
-
 const username = ref('enter')
 const password = ref('A505a')
 const tokenInput = ref('')
 const subscribtionInput = ref('')
+const logSearchInput = ref('')
 const cmdLogsList = ref(null)
 const journalLogsList = ref(null)
 const loginData = reactive({
   username,
   password
-} as LoginData)
+})
 
 const isConnected = ref(false)
 const isAuthorized = ref(false)
@@ -172,6 +163,8 @@ const statusClass = computed(() => {
 const cmdLogPanelClass = computed(() => {
   return isCmdLogPanelHidden.value ? 'hidden' : ''
 })
+
+const api = new AppApi()
 
 const appLogin = () => {
   const args = [CALL_TYPE.LOGIN, generateId(16), CALL_PATH.LOGIN, loginData]
@@ -201,13 +194,13 @@ const appSubscribeList = () => {
   api.subscribeList(connection, args)
 }
 
-const appSubscribe = (subscription) => {
+const appSubscribe = (subscription: string) => {
   const args = [CALL_TYPE.SUBSCRIBE, `${CALL_PATH.SUBSCRIBE}${subscription}`]
   addCmdLogMessage(CALL_MSG_LABEL.SUBSCRIBE, args)
   api.subscribe(connection, args)
 }
 
-const appUnubscribe = (subscription) => {
+const appUnubscribe = (subscription: string) => {
   const args = [CALL_TYPE.UNSUBSCRIBE, `${CALL_PATH.SUBSCRIBE}${subscription}`]
   addCmdLogMessage(CALL_MSG_LABEL.UNSUBSCRIBE, args)
   api.unsubscribe(connection, args)
@@ -220,7 +213,8 @@ const sendHeartBeat = () => {
 }
 
 const addCmdLogMessage = (type: string, msg: any) => {
-  CMD_LOG.value.push({ type, msg })
+  const date = new Date().toLocaleString()
+  CMD_LOG.value.push({ date, type, msg })
 }
 
 const getJournalFilters = (arr: any[]) => {
@@ -271,7 +265,7 @@ function setConnectionWatchers() {
 
 function setMessageWatcher() {
   connection.onmessage = function (event) {
-    const msg = JSON.parse(event.data)
+    const msg: any[] = JSON.parse(event.data)
 
     // 0 - Welcome
     if (msg[0] === MSG_TYPE.WELCOME) {
@@ -331,13 +325,26 @@ function clearJournalLogs() {
   journalFilterLabels.value = []
 }
 
+const searchClass = (log: any) => {
+  for (let key in log) {
+    if (
+      log[key].toLowerCase().includes(logSearchInput.value.toLowerCase()) &&
+      logSearchInput.value.length > 1
+    ) {
+      return 'search-result'
+    }
+  }
+}
+
+const getJurnalLogClasses = (log: LogItem) => {
+  return {
+    error: log.Level === 'ERROR',
+    warning: log.Level === 'WARN'
+  }
+}
+
 onMounted(() => {
   setConnectionWatchers()
-
-  // selectedJournalFilters.value.forEach((item) => {
-  //   console.log(item)
-  //   item.checked = true
-  // })
 })
 
 watch(CMD_LOG.value, () => {
@@ -417,6 +424,14 @@ watch(CMD_LOG.value, () => {
 
     &.warning {
       color: lightcoral;
+    }
+
+    &.search-result {
+      color: yellow;
+    }
+
+    &.search-result-test {
+      color: green;
     }
   }
 }
