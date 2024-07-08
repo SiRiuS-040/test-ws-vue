@@ -20,7 +20,7 @@
       </button>
 
       <button class="ui-button" @click="clearCmdLogs()">Очитить логи команд</button>
-
+      <button class="ui-button" @click="clearJournalLogs()">Очитить логи Журнала</button>
       <h2>Блок панели управления</h2>
 
       <div v-if="!isAuthorized && isConnected" class="admin-panel__login-form login-form">
@@ -44,7 +44,9 @@
 
       <div v-if="isAuthorized" class="admin-panel__controls">
         <button class="ui-button" @click="api.logout(connection)">Log out</button>
-        <button class="ui-button" @click="api.subscribeList(connection)">Получить логи</button>
+        <button class="ui-button" @click="api.subscribeList(connection)">
+          Получить данные Журнала
+        </button>
 
         <hr />
         <label class="ui-input">
@@ -66,20 +68,43 @@
         </button>
         <hr />
       </div>
+
+      <div v-if="isAuthorized && journalFilters.length" class="admin-panel__controls">
+        <h2>Фильтр</h2>
+        <div class="admin-panel__filters">
+          <label v-for="(item, index) in journalFilters" class="ui-checkbox" :key="index">
+            <input :value="item" type="checkbox" class="ui-checkbox__input" />
+            <span class="ui-checkbox__label">{{ item }}</span>
+          </label>
+        </div>
+      </div>
     </div>
     <div class="log-panel">
       <div :class="cmdLogPanelClass" class="admin-panel__logs-wrapper admin-panel__cmd-logs">
         <h2>Блок логов команд</h2>
         <div v-if="LOG_MSGS" class="logs-block" ref="cmdLogsList">
-          <p v-for="(log, index) in LOG_MSGS" :key="index">
-            {{ log }}
+          <p
+            v-for="(log, index) in LOG_MSGS"
+            :key="index"
+            :class="{ error: log.msg[0] === MSG_TYPE.CALL_ERROR }"
+            class="admin-panel__log-item"
+          >
+            {{ getLogMsg(log.type, JSON.stringify(log.msg)) }}
           </p>
         </div>
       </div>
       <div class="admin-panel__logs-wrapper admin-panel__journal-logs">
         <h2>Журнал работы</h2>
         <div class="logs-block" ref="journalLogsList">
-          <p v-for="(log, index) in SUBSCRIBE_LOGS" :key="index" class="admin-panel__log-item">
+          <p
+            v-for="(log, index) in SUBSCRIBE_LOGS"
+            :key="index"
+            :class="{
+              error: log?.Level === 'ERROR',
+              warning: log?.Level === 'WARN'
+            }"
+            class="admin-panel__log-item"
+          >
             {{ `${log?.Timestamp} ${log?.Level} ${log?.Message} ${log?.Source}` }}
           </p>
         </div>
@@ -89,19 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, unref, reactive, computed, watch, nextTick } from 'vue'
-
-// import {
-//   AppApi,
-//   LoginData,
-//   LoginCall,
-//   LogItem,
-//   SubscribeCall,
-//   CALL_PATH,
-//   CALL_TYPE,
-//   CALL_MSG_TYPE,
-//   RESPONSE_MSG_TYPE
-// } from '@/app/api/appApi'
+import { ref, reactive, computed, watch } from 'vue'
 
 export interface LoginData {
   username: string
@@ -172,7 +185,8 @@ enum RESPONSE_MSG_TYPE {
   RESPONSE_ERROR = 'RESPONSE_ERROR',
   RESPONSE = 'RESPONSE',
   EVENT = 'EVENT RESPONSE',
-  CALL_ERROR = 'CALL_ERROR'
+  CALL_ERROR = 'CALL_ERROR',
+  HEART_BEAT = 'HEART_BEAT RESPONSE'
 }
 
 class AppApi {
@@ -261,6 +275,8 @@ const isCmdLogPanelHidden = ref(false)
 const USER_NAME = ref('')
 const USER_TOKEN = ref('')
 
+const journalFilters = ref([])
+
 const statusClass = computed(() => {
   return isConnected.value ? 'connected' : ''
 })
@@ -285,7 +301,14 @@ function getLogMsg(type: string, changedData: string) {
 }
 
 function addResponseMessage(type: string, msg: any) {
-  LOG_MSGS.value.push(getLogMsg(type, JSON.stringify(msg)))
+  LOG_MSGS.value.push({ type, msg })
+}
+
+function getJournalFilters(arr: any[]) {
+  const levelsArr = arr.map(function (item) {
+    return item.Level
+  })
+  journalFilters.value = Array.from(new Set(levelsArr))
 }
 
 function setConnectionWatchers() {
@@ -298,7 +321,7 @@ function setConnectionWatchers() {
   }
 
   let heartBeatInterval = setInterval(() => {
-    api.sendHeartBeat(connection, counter++)
+    api.sendHeartBeat(connection, ++counter)
   }, 30000)
 
   connection.onclose = function (event) {
@@ -326,12 +349,15 @@ function setMessageWatcher() {
   connection.onmessage = function (event) {
     const msg = JSON.parse(event.data)
 
-    if (msg[0] !== MSG_TYPE.EVENT && msg[0] !== MSG_TYPE.CALL_ERROR) {
-      LOG_MSGS.value.push(getLogMsg(RESPONSE_MSG_TYPE.RESPONSE, JSON.stringify(msg)))
+    // 0 - Welcome
+    if (msg[0] === MSG_TYPE.WELCOME) {
+      addResponseMessage(RESPONSE_MSG_TYPE.OPEN_CONNECTION, msg)
     }
 
     // 3 - CallResult
     if (msg[0] === MSG_TYPE.CALL_RESULT) {
+      addResponseMessage(RESPONSE_MSG_TYPE.RESPONSE, msg)
+
       // Проверка на данные логина
       if (msg[2] && msg[2].Token && msg[2].Username) {
         localStorage.setItem('Token', msg[2].Token)
@@ -360,6 +386,15 @@ function setMessageWatcher() {
       }
 
       addResponseMessage(RESPONSE_MSG_TYPE.EVENT, msg)
+
+      getJournalFilters(SUBSCRIBE_LOGS.value)
+    }
+
+    // 20 - Heartbeat
+    // обновление счетчика с ответа
+    if (msg[0] === MSG_TYPE.HEART_BEAT) {
+      counter = msg[1]
+      addResponseMessage(RESPONSE_MSG_TYPE.HEART_BEAT, msg)
     }
   }
 }
@@ -373,6 +408,11 @@ function openConnection() {
 
 function clearCmdLogs() {
   LOG_MSGS.value = []
+}
+
+function clearJournalLogs() {
+  SUBSCRIBE_LOGS.value = []
+  journalFilters.value = []
 }
 
 setConnectionWatchers()
@@ -421,6 +461,12 @@ watch(LOG_MSGS.value, () => {
     gap: 24px;
   }
 
+  &__filters {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
   &__logs-wrapper {
     display: flex;
     flex-direction: column;
@@ -436,7 +482,6 @@ watch(LOG_MSGS.value, () => {
 
   &__cmd-logs {
     width: 500px;
-    // margin-right: 24px;
   }
 
   &__journal-logs {
@@ -444,7 +489,13 @@ watch(LOG_MSGS.value, () => {
   }
 
   &__log-item {
-    // white-space: nowrap;
+    &.error {
+      color: red;
+    }
+
+    &.warning {
+      color: lightcoral;
+    }
   }
 }
 
@@ -469,10 +520,6 @@ watch(LOG_MSGS.value, () => {
 .log-panel {
   display: grid;
   grid-template-columns: auto 1fr;
-
-  // display: flex;
-  // flex-direction: column;
-
   gap: 24px;
   max-height: inherit;
 }
@@ -480,7 +527,6 @@ watch(LOG_MSGS.value, () => {
 .logs-block {
   border: 1px solid gray;
   padding: 8px;
-
   flex-grow: 1;
   overflow: auto;
 }
@@ -488,6 +534,11 @@ watch(LOG_MSGS.value, () => {
 .ui-input {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+.ui-checkbox {
+  display: flex;
   gap: 4px;
 }
 </style>
